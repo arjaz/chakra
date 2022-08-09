@@ -92,17 +92,27 @@
     (with-slots (systems) world
       ;; system-type, system
       (iter (for (st s) in-hashtable systems)
-        (unless (components-in-system-p components s)
+        (unless (system-satisfies-components-p components s)
           (system-remove-entity s entity-id))))))
 
 (defun remove-components (world entity-id &rest components)
   (iter (for c in components)
     (remove-component world entity-id c)))
 
+(defun update-system (world system)
+  (iter (for (entity-id n) in-hashtable (system-entities system))
+    ;; TODO: process the (not component) part as well
+    (let ((args
+            (concatenate 'list
+                         (list world entity-id)
+                         (iter (for c in (direct-system-dependencies system))
+                           (collect (gethash c (components world entity-id)))))))
+      (apply (system-tick system) args))))
+
 (defmethod update-world ((world world) dt)
   (with-slots (systems) world
-    (iter (for (st s) in-hashtable systems)
-      (update-system world s dt))))
+    (iter (for (system-type system) in-hashtable systems)
+      (update-system world system))))
 
 (defmethod add-system ((world world) system)
   (with-slots (systems entity-ids) world
@@ -128,17 +138,6 @@
 (defmethod get-system ((world world) (system-type symbol))
   (gethash system-type (systems world)))
 
-(defmethod update-system ((world world) (system system) dt)
-  (format t "~s updated.~%" (type-of system)))
-
-;; (defun add-entities-to-systems (world)
-;;         ;; system-type, system
-;;         (iter (for (st s) in-hashtable systems)
-;;           ;; when all depencenies of system are satisfied
-;;           (when (components-in-system-p ec s)
-;;             ;; place entity into the system
-;;             (setf (gethash e (entities s)) 1)))))))
-
 (defmethod clear-entities ((world world))
   (with-slots (entity-ids) world
     (iter (for id from 0 below (length entity-ids))
@@ -152,22 +151,3 @@
           systems (make-hash-table))
     (iter (for i in-vector entity-ids)
       (setf i 0))))
-
-(defmacro system-do-with-components (component-types world system
-                                     id-var-name
-                                     &body body)
-  "COMPONENT-TYPE takes 2 value list, (var-name type) kind of like WITH-ACCESSORS.
-This loops through all entities in SYSTEM exposing the components
-specified in COMPONENT-TYPES. This macro exposes the current
-ENTITY-ID, as ID-VAR-NAME, which can be useful."
-
-  ;; the entities slot of system is a hashtable with a key of the
-  ;; entity-id and a value of 1, so N is a throw away variable.
-  `(iter (for (entity-id n) in-hashtable (system-entities ,system)) ;; loop through entities
-     ;;collect components specified in component-types
-     (let (,@(iter (for c in component-types)
-               (collect `(,(if (symbolp c) c (car c))
-                          (gethash ',(if (symbolp c) c (cadr c))
-                                   (components ,world entity-id)))))
-           (,(alexandria:symbolicate id-var-name) entity-id))
-       ,@body)))

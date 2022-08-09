@@ -3,30 +3,39 @@
 (defclass system ()
   ((dependencies
     :initarg :dependencies
-    :type cons
+    :type list
     :accessor dependencies)
    (entities
     :initarg :entities
     :type hash-table
-    :accessor system-entities))
+    :accessor system-entities)
+   (tick
+    :initarg :tick
+    :type function
+    :accessor system-tick))
   (:default-initargs
    :dependencies nil
    :entities (make-hash-table)))
 
-(defmacro defsystem (name (&rest dependencies))
-  `(defclass ,name (system) ()
-     (:default-initargs
-      :dependencies ',dependencies)))
+;; TODO: document dependencies
+(defmacro defsystem (name (&rest dependencies) &body body)
+  `(progn
+     (defun ,name (world id ,@(remove-if-not #'symbolp dependencies))
+       (declare (ignorable world id))
+       ,@body)
+     (defclass ,name (system) ()
+       (:default-initargs
+        :dependencies ',dependencies
+        :tick (symbol-function (quote ,name))))))
 
 (defmethod clear-system ((system system))
   (setf (system-entities system) (make-hash-table)))
 
 (defun system-add-entity (system entity-id components)
-  "If entity has correct components add into system."
-  (when (components-in-system-p components system)
-    (setf (gethash entity-id (system-entities system)) 1)
-    ;; (warn "Entity ~a doesn't satisfy dependencies of system ~a!~%" entity-id system))
-    ))
+  "If the entity has the correct components, add it into the system."
+  (if (system-satisfies-components-p components system)
+      (setf (gethash entity-id (system-entities system)) 1)
+      (warn "The entity ~a doesn't satisfy the dependencies ~a of the system ~a~%" entity-id (dependencies system) system)))
 
 (defun system-add-entities (system &rest entities)
   "Adds (entity-id components) into SYSTEM."

@@ -50,11 +50,21 @@
 (defun has-component-p (world entity-id component-type)
   (nth-value 1 (entity-component world entity-id component-type)))
 
-(defun components-in-system-p (components system)
-  "Returns T if COMPONENTS contains all the dependencies of SYSTEM, else NIL."
-  (with-slots (dependencies) system
-    ;; component type
-    (iter (for ct in dependencies)
-      (unless (in-hash-table-p ct components)
-        (leave nil))
-      (finally (return t)))))
+(defun direct-system-dependencies (system)
+  (remove-if-not #'symbolp (dependencies system)))
+
+(defun system-satisfies-components-p (components system)
+  "Returns T if COMPONENTS satisfies the dependencies of SYSTEM, else NIL."
+  (iter (for dependency in (dependencies system))
+    (cond
+      ((symbolp dependency)
+       ;; dependency is the component type
+       (unless (in-hash-table-p dependency components)
+         (leave nil)))
+      ((and (consp dependency)
+            (equal (first dependency) 'not))
+       ;; dependency is a list '(not component-type)
+       (when (in-hash-table-p (second dependency) components)
+         (leave nil)))
+      (t (warn "Unknown dependencies format: ~a~%" (dependencies system))))
+    (finally (return t))))

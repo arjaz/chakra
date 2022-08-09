@@ -13,5 +13,3 @@
 
 (defgeneric update-world (world dt)
   (:documentation "Update all the systems in the world."))
-
-(defgeneric update-system (world system dt))
