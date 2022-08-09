@@ -1,4 +1,4 @@
-(in-package :qua)
+(in-package :chakra)
 
 (defclass world ()
   ((entity-components

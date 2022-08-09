@@ -1,4 +1,4 @@
-(in-package #:qua)
+(in-package #:chakra)
 
 (defun build-var (var)
   "Creates a list for slot VAR, with initform nil, :accessor VAR, and :initarg :VAR."

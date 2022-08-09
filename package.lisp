@@ -1,6 +1,6 @@
 ;;;; package.lisp
 
-(defpackage #:qua
+(defpackage #:chakra
   (:use #:cl #:iter)
   ;; (:export
   ;;  ;; declaration macros

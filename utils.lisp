@@ -1,4 +1,4 @@
-(in-package :qua)
+(in-package :chakra)
 
 (defun print-table (table)
   (format t "#<HASH-TABLE~%")

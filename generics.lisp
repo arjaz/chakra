@@ -1,4 +1,4 @@
-(in-package :qua)
+(in-package :chakra)
 
 (defgeneric make-entity (world)
   (:documentation "Returns the unique id of the new entity."))
