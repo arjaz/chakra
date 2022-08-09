@@ -99,15 +99,18 @@
   (iter (for c in components)
     (remove-component world entity-id c)))
 
+(defun system-dependencies-values (world system entity-id)
+  (iter (for c in (direct-system-dependencies system))
+    (collect (gethash c (components world entity-id)))))
+
 (defun update-system (world system)
   (iter (for (entity-id n) in-hashtable (system-entities system))
-    ;; TODO: process the (not component) part as well
     (let ((args
             (concatenate 'list
                          (list world entity-id)
-                         (iter (for c in (direct-system-dependencies system))
-                           (collect (gethash c (components world entity-id)))))))
-      (apply (system-tick system) args))))
+                         (system-dependencies-values world system entity-id))))
+      (when (system-satisfies-components-p (components world entity-id) system)
+        (apply (system-tick system) args)))))
 
 (defmethod update-world ((world world) dt)
   (with-slots (systems) world
