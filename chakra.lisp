@@ -47,12 +47,7 @@
     :accessor system-queries
     :documentation "The list of queries of the given system.
 A query is a list where the first element is the name,
-and the rest are either component names or lists of two elements of form (not component-name).")
-   (tick
-    :initarg :tick
-    :type function
-    :accessor system-tick
-    :documentation "The function which runs the system once.")))
+and the rest are either component names or lists of two elements of form (not component-name).")))
 
 (defun query-positive-dependencies (query)
   "Extract the positive dependencies of the QUERY."
@@ -62,17 +57,25 @@ and the rest are either component names or lists of two elements of form (not co
   "Extract the negative dependencies of the QUERY."
   (mapcar #'second (remove-if #'symbolp (rest query))))
 
+(defgeneric tick-system-fn (system))
 (defmacro defsystem (name (&rest queries) &body body)
   (let ((world-name (first queries))
         (query-names (iter (for query in (rest queries))
                        (collect (first query)))))
     `(progn
-       (defun ,name (,world-name ,@query-names)
-         ,@body)
+       (defun ,name (,world-name ,@query-names) ,@body)
        (defclass ,name (system) ()
          (:default-initargs
-          :queries ',(rest queries)
-          :tick (symbol-function (quote ,name)))))))
+          :queries ',(rest queries)))
+       (defmethod tick-system-fn ((s ,name))
+         (declare (ignore s))
+         (symbol-function (quote ,name))))))
+
+(defun in-hash-table-p (key hash-table)
+  ;; gethash returns 2 values, the value,
+  ;; and a boolean saying whether the key is in the hash table or not
+  ;; (it's zero based indexing, so nth-value 1)
+  (nth-value 1 (gethash key hash-table)))
 
 (defun negative-dependencies-satisfied-p (world entity query)
   (let ((components (gethash entity (entity-components world))))
@@ -85,21 +88,26 @@ and the rest are either component names or lists of two elements of form (not co
   (let ((components (gethash entity (entity-components world))))
     (iter (for component-type in (query-positive-dependencies query))
       (alexandria:if-let (component (gethash component-type components))
-        (collect component)
-        (leave)))))
+        (collect component into collected-components)
+        (leave))
+      (finally (return (values collected-components t))))))
 
 (defun entity-defined-p (world entity)
   (not (zerop (aref (entity-ids world) entity))))
 
 (defun query-components (world query)
-  "Extract the list with the data of matching components based on the QUERY."
+  "Extract the list with the data of matching components based on the QUERY.
+The second value indicates whether the query was succesful."
   (iter (for entity from 0 below (length (entity-ids world)))
     (when (and (entity-defined-p world entity)
                (negative-dependencies-satisfied-p world entity query))
       (alexandria:when-let (components (positive-dependencies world entity query))
-        (collect (append (list entity) components))))))
+        (collect (append (list entity) components) into collected-components)))
+    (finally (return (values collected-components t)))))
 
 (defun query-entity-components (world entity query)
+  "Extract the list with the data of matching components based on the QUERY.
+The second value indicates whether the query was successful."
   (when (negative-dependencies-satisfied-p world entity (append (list 'ignore) query))
     (positive-dependencies world entity (append (list 'ignore) query))))
 
@@ -140,9 +148,9 @@ and the rest are either component names or lists of two elements of form (not co
 (defun update-system (world system)
   (let ((queried-data (iter (for query in (system-queries system))
                         (collect (query-components world query)))))
+    ;; TODO: skip if any two of them are the same
     (iter (for args in (cartesian-product queried-data))
-      (apply (system-tick system) world args))))
-
+      (apply (tick-system-fn system) world args))))
 
 (defun add-component (world entity component)
   (let ((component-type (type-of component))
