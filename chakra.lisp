@@ -19,6 +19,12 @@
   `(defclass ,name ()
      (,@(build-varlist slots))))
 
+(defmacro defresource (name (&rest slots))
+  "Makes a basic class. The accessors are declared for the slots, with the same name."
+  `(defclass ,name ()
+     (,@(build-varlist slots))))
+
+;; TODO: rename fields
 (defclass world ()
   ((entity-components
     :initform (make-hash-table)
@@ -37,7 +43,12 @@
     :initform (make-hash-table)
     :type hash-table
     :accessor systems
-    :documentation "A hash table from the system type to the system object."))
+    :documentation "A hash table from the system type to the system object.")
+   (resources
+    :initform (make-hash-table)
+    :type hash-table
+    :accessor resources
+    :documentation "A hash table from resource type to its value."))
   (:documentation "Handles the entities and the systems. Hash tables are used to enforce uniqueness."))
 
 (defclass system ()
@@ -192,6 +203,24 @@ The second value indicates whether the query was successful."
 (defun get-system (world system-type)
   (gethash system-type (systems world)))
 
+(defun get-resource (world resource-type)
+  (gethash resource-type (resources world)))
+
+(defun add-resource (world resource)
+  (setf (gethash (type-of resource) (resources world)) resource))
+
+(defun add-resources (world resource &rest resources)
+  (add-resource world resource)
+  (iter (for r in resources)
+    (add-resource world r)))
+
+(defun remove-resource (world resource)
+  (remhash (type-of resource) (resources world)))
+
+(defun remove-resources (world resource &rest resources)
+  (remove-resource world resource)
+  (iter (for r in resources)
+    (remove-resource world r)))
 
 ;; exports all symbols in package
 ;; seems reckless, but convenient
