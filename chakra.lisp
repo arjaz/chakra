@@ -61,15 +61,17 @@ A query is a list where the first element is the name,
 and the rest are either component names or lists of two elements of form (not component-name).")))
 
 (defun query-positive-dependencies (query)
-  "Extract the positive dependencies of the QUERY."
+  "Extract the dependencies of the QUERY which must be present."
   (remove-if-not #'symbolp (rest query)))
 
 (defun query-negative-dependencies (query)
-  "Extract the negative dependencies of the QUERY."
+  "Extract the dependencies of the QUERY which must not be present."
   (mapcar #'second (remove-if #'symbolp (rest query))))
 
 (defgeneric tick-system-fn (system))
 (defmacro defsystem (name (&rest queries) &body body)
+  "Create a system with a NAME.
+Creates a class to store the QUERIES, and a function to run the BODY."
   (let ((world-name (first queries))
         (query-names (iter (for query in (rest queries))
                        (collect (first query)))))
@@ -83,12 +85,12 @@ and the rest are either component names or lists of two elements of form (not co
          (symbol-function (quote ,name))))))
 
 (defun in-hash-table-p (key hash-table)
-  ;; gethash returns 2 values, the value,
-  ;; and a boolean saying whether the key is in the hash table or not
-  ;; (it's zero based indexing, so nth-value 1)
+  "T if the KEY is in the HASH-TABLE."
   (nth-value 1 (gethash key hash-table)))
 
 (defun negative-dependencies-satisfied-p (world entity query)
+  "Check if the negative component dependencies of the QUERY which must not be present in the ENTITY
+are indeed not associated with that ENTITY in the given WORLD."
   (let ((components (gethash entity (entity-components world))))
     (iter (for component-type in (query-negative-dependencies query))
       (when (in-hash-table-p component-type components)
@@ -96,6 +98,8 @@ and the rest are either component names or lists of two elements of form (not co
       (finally (return t)))))
 
 (defun positive-dependencies (world entity query)
+  "Check if the positive component dependencies of the QUERY which must be present in the ENTITY
+are indeed associated with that ENTITY in the given WORLD."
   (let ((components (gethash entity (entity-components world))))
     (iter (for component-type in (query-positive-dependencies query))
       (alexandria:if-let (component (gethash component-type components))
@@ -104,6 +108,7 @@ and the rest are either component names or lists of two elements of form (not co
       (finally (return (values collected-components t))))))
 
 (defun entity-defined-p (world entity)
+  "Check if the ENTITY is present in the WORLD."
   (not (zerop (aref (entity-ids world) entity))))
 
 (defun query-components (world query)
@@ -123,6 +128,7 @@ The second value indicates whether the query was successful."
     (positive-dependencies world entity (append (list 'ignore) query))))
 
 (defun make-entity (world)
+  "Inserts a new empty entity into the WORLD and returns it."
   (iter (for entity from 0 below (length (entity-ids world)))
     ;; found an empty slot in the entities array - use it
     (unless (entity-defined-p world entity)
@@ -137,14 +143,15 @@ The second value indicates whether the query was successful."
              (return entity))))
 
 (defun remove-entity (world entity)
+  "Removes the given ENTITY from the WORLD and clears out all associated components."
   (when (zerop (aref (entity-ids world) entity))
     (warn "Entity ~a not found, nothing removed.~%" entity)
     (return-from remove-entity nil))
   (remhash entity (entity-components world))
   (setf (aref (entity-ids world) entity) 0))
 
-(defun remove-entities (world entity &rest entities)
-  (remove-entity world entity)
+(defun remove-entities (world &rest entities)
+  "Removes all the ENTITIES from the WORLD and clears out all associated components"
   (iter (for e in entities)
     (remove-entity world e)))
 
@@ -152,73 +159,85 @@ The second value indicates whether the query was successful."
   "Compute the n-cartesian product of a list of sets (each of them represented as list)."
   (if (null l)
       (list nil)
+      ;; TODO: iter
       (loop for x in (car l)
             nconc (loop for y in (cartesian-product (cdr l))
                         collect (cons x y)))))
 
 (defun update-system (world system)
+  "Tick the SYSTEM (type) of the WORLD.
+Runs the system against all components matching the query of the SYSTEM."
   (let ((queried-data (iter (for query in (system-queries system))
                         (collect (query-components world query)))))
     ;; TODO: skip if any two of them are the same
     (iter (for args in (cartesian-product queried-data))
       (apply (tick-system-fn system) world args))))
 
+;; TODO: what happens when the entity doesn't exist?
 (defun add-component (world entity component)
+  "Adds a COMPONENT to the ENTITY in the WORLD."
   (let ((component-type (type-of component))
         (e-components (gethash entity (entity-components world))))
     (when (in-hash-table-p component-type e-components)
       (warn "Entity ~a already has the component of type ~a, replacing it.~%" entity component-type))
     (setf (gethash component-type e-components) component)))
 
-(defun add-components (world entity component &rest components)
-  (add-component world entity component)
+(defun add-components (world entity &rest components)
+  "Adds the COMPONENTS to the ENTITY in the WORLD."
   (iter (for c in components)
     (add-component world entity c)))
 
 (defun remove-component (world entity component-type)
+  "Removes the COMPONENT-TYPE from the ENTITY in the WORLD."
   (let ((e-components (gethash entity (entity-components world))))
     (remhash component-type e-components)))
 
-(defun remove-components (world entity component &rest components)
-  (remove-component world entity component)
+(defun remove-components (world entity &rest components)
+  "Removes all COMPENENTS from the ENTITY in the WORLD."
   (iter (for c in components)
     (remove-component world entity c)))
 
 (defun add-system (world system)
+  "Creates a SYSTEM in the WORLD."
   (setf (gethash (type-of system) (systems world)) system))
 
-(defun add-systems (world system &rest systems)
-  (add-system world system)
+(defun add-systems (world &rest systems)
+  "Add all SYSTEMS to the WORLD."
   (iter (for s in systems)
     (add-system world s)))
 
 (defun remove-system (world system)
+  "Removes the SYSTEM from the WORLD."
   (remhash (type-of system) (systems world)))
 
-(defun remove-systems (world system &rest systems)
-  (remove-system world system)
+(defun remove-systems (world &rest systems)
+  "Removes all SYSTEMS from the world"
   (iter (for s in systems)
     (remove-system world s)))
 
 (defun get-system (world system-type)
+  "Gets the system object by its type from the WORLD."
   (gethash system-type (systems world)))
 
 (defun get-resource (world resource-type)
+  "Gets the resource object by its type from the WORLD."
   (gethash resource-type (resources world)))
 
 (defun add-resource (world resource)
+  "Adds the RESOURCE to the WORLD."
   (setf (gethash (type-of resource) (resources world)) resource))
 
-(defun add-resources (world resource &rest resources)
-  (add-resource world resource)
+(defun add-resources (world &rest resources)
+  "Adds all RESOURCES to the WORLD."
   (iter (for r in resources)
     (add-resource world r)))
 
 (defun remove-resource (world resource)
+  "Removes the RESOURCE from the WORLD."
   (remhash (type-of resource) (resources world)))
 
-(defun remove-resources (world resource &rest resources)
-  (remove-resource world resource)
+(defun remove-resources (world &rest resources)
+  "Removes all REOUSRCES from the WORLD."
   (iter (for r in resources)
     (remove-resource world r)))
 
