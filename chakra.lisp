@@ -43,7 +43,7 @@
     :initform (make-hash-table)
     :type hash-table
     :accessor systems
-    :documentation "A hash table from the system type to the system object.")
+    :documentation "A hash table from the event type to the systems - hash tables from the system type to the system object.")
    (resources
     :initform (make-hash-table)
     :type hash-table
@@ -71,15 +71,18 @@ and the rest are either component names or lists of two elements of form (not co
 (defgeneric tick-system-fn (system))
 (defmacro defsystem (name (&rest queries) &body body)
   "Create a system with a NAME.
-Creates a class to store the QUERIES, and a function to run the BODY."
+Creates a class to store the QUERIES, and a function to run the BODY.
+The first argument of the function must be the world, and the second must be the event."
   (let ((world-name (first queries))
-        (query-names (iter (for query in (rest queries))
+        (event-name (second queries))
+        (query-names (iter (for query in (rest (rest queries)))
                        (collect (first query)))))
     `(progn
-       (defun ,name (,world-name ,@query-names) ,@body)
+       ;; TODO: query-names destructuring
+       (defun ,name (,world-name ,event-name ,@query-names) ,@body)
        (defclass ,name (system) ()
          (:default-initargs
-          :queries ',(rest queries)))
+          :queries ',(rest (rest queries))))
        (defmethod tick-system-fn ((s ,name))
          (declare (ignore s))
          (symbol-function (quote ,name))))))
@@ -129,18 +132,18 @@ The second value indicates whether the query was successful."
 
 (defun make-entity (world)
   "Inserts a new empty entity into the WORLD and returns it."
-  (iter (for entity from 0 below (length (entity-ids world)))
-    ;; found an empty slot in the entities array - use it
-    (unless (entity-defined-p world entity)
-      (setf (aref (entity-ids world) entity) 1
-            ;; initialize the entity's components
-            (gethash entity (entity-components world)) (make-hash-table))
-      (leave entity))
-    ;; if no empty slots found - extend the entities array
-    (finally (vector-push-extend 1 (entity-ids world))
-             ;; initialize the entity's components
-             (setf (gethash entity (entity-components world)) (make-hash-table))
-             (return entity))))
+  (flet ((initialize-components (entity)
+           (setf (gethash entity (entity-components world)) (make-hash-table))))
+    (iter (for entity from 0 below (length (entity-ids world)))
+      ;; found an empty slot in the entities array - use it
+      (unless (entity-defined-p world entity)
+        (setf (aref (entity-ids world) entity) 1)
+        (initialize-components entity)
+        (leave entity))
+      ;; if no empty slots found - extend the entities array
+      (finally (vector-push-extend 1 (entity-ids world))
+               (initialize-components entity)
+               (return entity)))))
 
 (defun remove-entity (world entity)
   "Removes the given ENTITY from the WORLD and clears out all associated components."
@@ -164,16 +167,20 @@ The second value indicates whether the query was successful."
             nconc (loop for y in (cartesian-product (cdr l))
                         collect (cons x y)))))
 
-(defun update-system (world system)
-  "Tick the SYSTEM (type) of the WORLD.
+(defun tick-system (world event system)
+  "Tick the SYSTEM of the WORLD with the passed event.
 Runs the system against all components matching the query of the SYSTEM."
   (let ((queried-data (iter (for query in (system-queries system))
                         (collect (query-components world query)))))
     ;; TODO: skip if any two of them are the same
     (iter (for args in (cartesian-product queried-data))
-      (apply (tick-system-fn system) world args))))
+      (apply (tick-system-fn system) world event args))))
 
-;; TODO: what happens when the entity doesn't exist?
+(defun tick-event (world event)
+  "Tick all systems subscribed to the EVENT in the WORLD."
+  (iter (for (system-type system) in-hashtable (gethash event (systems world)))
+    (tick-system world event system)))
+
 (defun add-component (world entity component)
   "Adds a COMPONENT to the ENTITY in the WORLD."
   (let ((component-type (type-of component))
@@ -197,27 +204,30 @@ Runs the system against all components matching the query of the SYSTEM."
   (iter (for c in components)
     (remove-component world entity c)))
 
-(defun add-system (world system)
-  "Creates a SYSTEM in the WORLD."
-  (setf (gethash (type-of system) (systems world)) system))
+(defun add-system (world event system)
+  "Creates a SYSTEM in the WORLD fired after the EVENT."
+  (unless (in-hash-table-p event (systems world))
+    (setf (gethash event (systems world)) (make-hash-table)))
+  (setf (gethash (type-of system) (gethash event (systems world))) system))
 
-(defun add-systems (world &rest systems)
-  "Add all SYSTEMS to the WORLD."
+(defun add-systems (world event &rest systems)
+  "Add all SYSTEMS to the WORLD fired after the EVENT.."
   (iter (for s in systems)
-    (add-system world s)))
+    (add-system world event s)))
 
-(defun remove-system (world system)
-  "Removes the SYSTEM from the WORLD."
-  (remhash (type-of system) (systems world)))
+(defun remove-system (world event system)
+  "Removes the SYSTEM bound to the EVENT from the WORLD."
+  (when (in-hash-table-p event (systems world))
+    (remhash (type-of system) (gethash event (systems world)))))
 
-(defun remove-systems (world &rest systems)
-  "Removes all SYSTEMS from the world"
+(defun remove-systems (world event &rest systems)
+  "Removes all SYSTEMS bound to the EVENT from the world"
   (iter (for s in systems)
-    (remove-system world s)))
+    (remove-system world event s)))
 
-(defun get-system (world system-type)
-  "Gets the system object by its type from the WORLD."
-  (gethash system-type (systems world)))
+(defun get-system (world event system-type)
+  "Gets the system object by its type and event from the WORLD."
+  (gethash system-type (gethash event (systems world))))
 
 (defun get-resource (world resource-type)
   "Gets the resource object by its type from the WORLD."
