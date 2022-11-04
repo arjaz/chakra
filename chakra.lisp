@@ -132,18 +132,18 @@ The second value indicates whether the query was successful."
 
 (defun make-entity (world)
   "Inserts a new empty entity into the WORLD and returns it."
-  (iter (for entity from 0 below (length (entity-ids world)))
-    ;; found an empty slot in the entities array - use it
-    (unless (entity-defined-p world entity)
-      (setf (aref (entity-ids world) entity) 1
-            ;; initialize the entity's components
-            (gethash entity (entity-components world)) (make-hash-table))
-      (leave entity))
-    ;; if no empty slots found - extend the entities array
-    (finally (vector-push-extend 1 (entity-ids world))
-             ;; initialize the entity's components
-             (setf (gethash entity (entity-components world)) (make-hash-table))
-             (return entity))))
+  (flet ((initialize-components (entity)
+           (setf (gethash entity (entity-components world)) (make-hash-table))))
+    (iter (for entity from 0 below (length (entity-ids world)))
+      ;; found an empty slot in the entities array - use it
+      (unless (entity-defined-p world entity)
+        (setf (aref (entity-ids world) entity) 1)
+        (initialize-components entity)
+        (leave entity))
+      ;; if no empty slots found - extend the entities array
+      (finally (vector-push-extend 1 (entity-ids world))
+               (initialize-components entity)
+               (return entity)))))
 
 (defun remove-entity (world entity)
   "Removes the given ENTITY from the WORLD and clears out all associated components."
