@@ -73,16 +73,17 @@ and the rest are either component names or lists of two elements of form (not co
   "Create a system with a NAME.
 Creates a class to store the QUERIES, and a function to run the BODY.
 The first argument of the function must be the world, and the second must be the event."
-  (let ((world-name (first queries))
-        (event-name (second queries))
-        (query-names (iter (for query in (rest (rest queries)))
-                       (collect (first query)))))
+  (let ((world-name   (first queries))
+        (event-name   (second queries))
+        (payload-name (third queries))
+        (query-names  (iter (for query in (rest (rest (rest queries))))
+                        (collect (first query)))))
     `(progn
        ;; TODO: query-names destructuring
-       (defun ,name (,world-name ,event-name ,@query-names) ,@body)
+       (defun ,name (,world-name ,event-name ,payload-name ,@query-names) ,@body)
        (defclass ,name (system) ()
          (:default-initargs
-          :queries ',(rest (rest queries))))
+          :queries ',(rest (rest (rest queries)))))
        (defmethod tick-system-fn ((s ,name))
          (declare (ignore s))
          (symbol-function (quote ,name))))))
@@ -167,19 +168,19 @@ The second value indicates whether the query was successful."
             nconc (loop for y in (cartesian-product (cdr l))
                         collect (cons x y)))))
 
-(defun tick-system (world event system)
-  "Tick the SYSTEM of the WORLD with the passed event.
+(defun tick-system (world system event &optional payload)
+  "Tick the SYSTEM of the WORLD with the passed event and the payload.
 Runs the system against all components matching the query of the SYSTEM."
   (let ((queried-data (iter (for query in (system-queries system))
                         (collect (query-components world query)))))
     ;; TODO: skip if any two of them are the same
     (iter (for args in (cartesian-product queried-data))
-      (apply (tick-system-fn system) world event args))))
+      (apply (tick-system-fn system) world event payload args))))
 
-(defun tick-event (world event)
-  "Tick all systems subscribed to the EVENT in the WORLD."
+(defun tick-event (world event &optional payload)
+  "Tick all systems subscribed to the EVENT in the WORLD with the PAYLOAD."
   (iter (for (system-type system) in-hashtable (gethash event (systems world)))
-    (tick-system world event system)))
+    (tick-system world  system event payload)))
 
 (defun add-component (world entity component)
   "Adds a COMPONENT to the ENTITY in the WORLD."
@@ -257,7 +258,3 @@ Runs the system against all components matching the query of the SYSTEM."
   (do-all-symbols (sym pack)
     (when (eql (symbol-package sym) pack)
       (export sym))))
-
-
-
-
