@@ -3,11 +3,25 @@
 (in-package #:chakra)
 
 (defun build-var (var)
-  "Creates a list for slot VAR, with initform nil, :accessor VAR, and :initarg :VAR."
-  (list var
-        :initform nil
-        :accessor (intern (string var))
-        :initarg (intern (string var) :keyword)))
+  "Creates a list for slot VAR, with initform nil, :accessor VAR, and :initarg :VAR.
+Supports type designators and initforms."
+  (if (listp var)
+      ;; TODO: allow length 2 and 3 only
+      (let* ((v (first var))
+             (init (when (listp v) (second v)))
+             (v-name (if (listp v) (first v) v))
+             (type (second var))
+             (docs (third var)))
+        (list v-name
+              :initform init
+              :accessor (intern (string v-name))
+              :initarg (intern (string v-name) :keyword)
+              :type type
+              :documentation docs))
+      (list var
+            :initform nil
+            :accessor (intern (string var))
+            :initarg (intern (string var) :keyword))))
 
 (defun build-varlist (varlist)
   "Takes a list and creates a list of slot lists."
@@ -15,12 +29,24 @@
     (collect (build-var var))))
 
 (defmacro defcomponent (name (&rest slots))
-  "Makes a basic class. The accessors are declared for the slots, with the same name."
+  "Makes a basic class. The accessors are declared for the slots, with the same name.
+Supports type designators and init forms.
+Usage:
+  (defcomponent location (x y))
+  (defcomponent location
+    (((x 10) integer)
+     (y (or integer nil) \"Y can be nil instead\")))"
   `(defclass ,name ()
      (,@(build-varlist slots))))
 
 (defmacro defresource (name (&rest slots))
-  "Makes a basic class. The accessors are declared for the slots, with the same name."
+  "Makes a basic class. The accessors are declared for the slots, with the same name.
+Supports type designators and init forms.
+Usage:
+  (defresource music (duration))
+  (defresource window-size
+    (((height 600) integer \"Height in px\")
+     ((width 800) integer \"Width in px\")))"
   `(defclass ,name ()
      (,@(build-varlist slots))))
 
