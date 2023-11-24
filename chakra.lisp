@@ -2,54 +2,6 @@
 
 (in-package #:chakra)
 
-(defun build-var (var)
-  "Creates a list for slot VAR, with initform nil, :accessor VAR, and :initarg :VAR.
-Supports type designators and initforms."
-  (if (listp var)
-      ;; TODO: allow length 2 and 3 only
-      (let* ((v (first var))
-             (init (when (listp v) (second v)))
-             (v-name (if (listp v) (first v) v))
-             (type (second var))
-             (docs (third var)))
-        (list v-name
-              :initform init
-              :accessor (intern (string v-name))
-              :initarg (intern (string v-name) :keyword)
-              :type type
-              :documentation docs))
-      (list var
-            :initform nil
-            :accessor (intern (string var))
-            :initarg (intern (string var) :keyword))))
-
-(defun build-varlist (varlist)
-  "Takes a list and creates a list of slot lists."
-  (iter (for var in varlist)
-    (collect (build-var var))))
-
-(defmacro defcomponent (name (&rest slots))
-  "Makes a basic class. The accessors are declared for the slots, with the same name.
-Supports type designators and init forms.
-Usage:
-  (defcomponent location (x y))
-  (defcomponent location
-    (((x 10) integer)
-     (y (or integer nil) \"Y can be nil instead\")))"
-  `(defclass ,name ()
-     (,@(build-varlist slots))))
-
-(defmacro defresource (name (&rest slots))
-  "Makes a basic class. The accessors are declared for the slots, with the same name.
-Supports type designators and init forms.
-Usage:
-  (defresource music (duration))
-  (defresource window-size
-    (((height 600) integer \"Height in px\")
-     ((width 800) integer \"Width in px\")))"
-  `(defclass ,name ()
-     (,@(build-varlist slots))))
-
 ;; TODO: rename fields
 (defclass world ()
   ((entity-components
@@ -76,6 +28,11 @@ Usage:
     :accessor resources
     :documentation "A hash table from resource type to its value."))
   (:documentation "Handles the entities and the systems. Hash tables are used to enforce uniqueness."))
+
+(defclass component () ()
+  (:documentation "A base class for user-defined components"))
+(defclass resource () ()
+  (:documentation "A base class for user-defined resources"))
 
 (defclass system ()
   ((queries
