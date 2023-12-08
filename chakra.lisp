@@ -2,7 +2,6 @@
 
 (in-package #:chakra)
 
-;; TODO: rename fields
 (defclass world ()
   ((entity-components
     :initform (make-hash-table)
@@ -98,7 +97,7 @@ are indeed associated with that ENTITY in the given WORLD."
   "Check if the ENTITY is present in the WORLD."
   (not (zerop (aref (entity-ids world) entity))))
 
-(defun query-components (world query)
+(defun query (world query)
   "Extract the list with the data of matching components based on the QUERY.
 The second value indicates whether the query was succesful."
   (iter (for entity from 0 below (length (entity-ids world)))
@@ -155,7 +154,7 @@ The second value indicates whether the query was successful."
   "Tick the SYSTEM of the WORLD with the passed event and the payload.
 Runs the system against all components matching the query of the SYSTEM."
   (let ((queried-data (iter (for query in (system-queries system))
-                        (collect (query-components world query)))))
+                        (collect (query world query)))))
     ;; TODO: skip if any two of them are the same
     (iter (for args in (cartesian-product queried-data))
       (apply (tick-system-fn system) world event payload args))))
@@ -163,7 +162,7 @@ Runs the system against all components matching the query of the SYSTEM."
 (defun tick-event (world event &optional payload)
   "Tick all systems subscribed to the EVENT in the WORLD with the PAYLOAD."
   (iter (for (system-type system) in-hashtable (gethash event (systems world)))
-    (tick-system world  system event payload)))
+    (tick-system world system event payload)))
 
 (defun add-component (world entity component)
   "Adds a COMPONENT to the ENTITY in the WORLD."
@@ -234,10 +233,3 @@ Runs the system against all components matching the query of the SYSTEM."
   "Removes all REOUSRCES from the WORLD."
   (iter (for r in resources)
     (remove-resource world r)))
-
-;; exports all symbols in package
-;; seems reckless, but convenient
-(let ((pack (find-package :chakra)))
-  (do-all-symbols (sym pack)
-    (when (eql (symbol-package sym) pack)
-      (export sym))))
